@@ -164,7 +164,7 @@ function parseDef14a(texto: string) {
   }
 
   // ── CEO y compensación ──
-  let compCEO: CompensacionCEO = { nombre: NA, total: NA };
+  const compCEO: CompensacionCEO = { nombre: NA, total: NA };
 
   // Palabras que nunca son nombre de persona
   const NO_NOMBRE = /^(Total|Target|Base|Annual|Long|Named|Summary|Compensation|Plan|Equity|Cash|Grant|Award|Proxy|Notice|Meeting|Vote|Board|Committee|Pension|Benefit|Value|Amount|Number|Shares|Stock|Fiscal|Year|Table|Section|Item|Form|The|Our|We|This|These|None|No)\b/i;
