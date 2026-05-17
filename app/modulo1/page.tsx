@@ -157,10 +157,19 @@ function validarTexto(texto: string | undefined | null): string {
   return t;
 }
 
+const FUENTE_ESTILOS: Record<string, string> = {
+  "SEC EDGAR":    "bg-blue-500/20 border-blue-500/40 text-blue-400",
+  "Yahoo Finance":"bg-orange-500/20 border-orange-500/40 text-orange-400",
+  "Glassdoor":    "bg-emerald-500/20 border-emerald-500/40 text-emerald-400",
+  "DuckDuckGo":   "bg-orange-500/20 border-orange-500/40 text-orange-400",
+  "Groq IA":      "bg-violet-500/20 border-violet-500/40 text-violet-400",
+};
+
 function FuenteBadge({ fuente }: { fuente?: string }) {
-  if (!fuente || fuente === "SEC EDGAR") return null;
+  if (!fuente) return null;
+  const cls = FUENTE_ESTILOS[fuente] ?? "bg-orange-500/20 border-orange-500/40 text-orange-400";
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-orange-500/20 border border-orange-500/40 text-orange-400 ml-1 flex-shrink-0 whitespace-nowrap">
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border ml-1 flex-shrink-0 whitespace-nowrap ${cls}`}>
       {fuente}
     </span>
   );
@@ -318,10 +327,12 @@ function SeccionPreguntas({
             </div>
             <div className="space-y-3">
               {lista.map(p => {
-                const baseResp = validarTexto(respuestas[p.id]);
-                const resp     = respuestasEsp?.[p.id] ?? baseResp;
-                const fuente   = fuentes?.[p.id] ?? "";
-                const sinDato  = resp === "Informacion no disponible";
+                const baseResp  = validarTexto(respuestas[p.id]);
+                const groqResp  = respuestasEsp?.[p.id];
+                const resp      = groqResp ?? baseResp;
+                const sinDato   = resp === "Informacion no disponible";
+                // Si se muestra la versión Groq → fuente es "Groq IA"; sino la fuente original
+                const fuente    = !sinDato && groqResp ? "Groq IA" : (fuentes?.[p.id] ?? "");
                 return (
                   <div key={p.id} className="bg-[#1e293b] rounded-xl border border-slate-700 p-5">
                     <div className="flex items-start gap-3">
