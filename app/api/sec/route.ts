@@ -166,43 +166,63 @@ function parseDef14a(texto: string) {
   let compCEO: CompensacionCEO = { nombre: NA, total: NA };
 
   // Palabras que NUNCA son nombre de persona (falsos positivos frecuentes)
-  const NO_NOMBRE = /^(Total|Target|Base|Annual|Long|Named|Executive|Summary|Compensation|Plan|Equity|Cash|Grant|Award|Proxy|Notice|Meeting|Vote|Board|Committee|Pension|Benefit|Value|Amount|Number|Shares|Stock|Fiscal|Year|Table|Section|Item|Form|The|Our|We|This|These)/i;
+  const NO_NOMBRE = /^(None|No\b|Total|Target|Base|Annual|Long|Named|Executive|Summary|Compensation|Plan|Equity|Cash|Grant|Award|Proxy|Notice|Meeting|Vote|Board|Committee|Pension|Benefit|Value|Amount|Number|Shares|Stock|Fiscal|Year|Table|Section|Item|Form|The|Our|We|This|These)/i;
 
-  // Estrategia 1: usar la lista de directores ya parseada (más fiable)
+  // Limpia ruido que los documentos SEC pegan antes/después del nombre
+  function limpiarNombre(raw: string): string {
+    return raw
+      .replace(/\s*chief\s+executive.*$/i, "")   // quitar "Chief Executive..." residual
+      .replace(/^\s*(?:none|no)\s+/i, "")        // quitar "None"/"No" del inicio
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  // Estrategia 1: lista de directores ya parseada — busca "Chief Executive" en nombre O cargo
   const ceoDir = directores.find(d =>
     /chief executive officer/i.test(d.cargo) ||
-    /\bpresident\b.{0,15}\bchief executive\b/i.test(d.cargo)
+    /chief executive/i.test(d.nombre)
   );
-  if (ceoDir) compCEO.nombre = ceoDir.nombre;
+  if (ceoDir) {
+    const nombrePuro = limpiarNombre(ceoDir.nombre);
+    if (nombrePuro.length > 3 && !NO_NOMBRE.test(nombrePuro)) {
+      compCEO.nombre = nombrePuro;
+    }
+  }
 
   // Estrategia 2: "[Nombre]\nChief Executive Officer" — patrón DEF 14A más común
   if (compCEO.nombre === NA) {
     const re2 = /([A-Z][a-z]+(?:[ \t]+[A-Z]\.?[ \t]*)?(?:[ \t]+[A-Z][a-z]+){1,2})\s*[\n\r]+\s*Chief Executive Officer/;
     const m2 = texto.match(re2);
-    if (m2 && !NO_NOMBRE.test(m2[1].trim())) compCEO.nombre = m2[1].trim();
+    if (m2) {
+      const n = limpiarNombre(m2[1]);
+      if (!NO_NOMBRE.test(n)) compCEO.nombre = n;
+    }
   }
 
   // Estrategia 3: "Chief Executive Officer" seguido de nombre en la siguiente línea
   if (compCEO.nombre === NA) {
     const re3 = /Chief Executive Officer\W{0,5}[\n\r]+\s*([A-Z][a-z]+(?:[ \t]+[A-Z]\.?[ \t]*)?(?:[ \t]+[A-Z][a-z]+){1,2})/;
     const m3 = texto.match(re3);
-    if (m3 && !NO_NOMBRE.test(m3[1].trim())) compCEO.nombre = m3[1].trim();
+    if (m3) {
+      const n = limpiarNombre(m3[1]);
+      if (!NO_NOMBRE.test(n)) compCEO.nombre = n;
+    }
   }
 
-  // Estrategia 4: "[Nombre], Chief Executive Officer" o "[Nombre] Chief Executive Officer" en misma línea
+  // Estrategia 4: "[Nombre] Chief Executive Officer" en misma línea — toma solo últimas 2 palabras antes del título
   if (compCEO.nombre === NA) {
-    const re4 = /([A-Z][a-z]+(?:[ \t]+[A-Z]\.?[ \t]*)?(?:[ \t]+[A-Z][a-z]+){1,2})[,\s]+(?:Chief Executive Officer|President and Chief Executive Officer)/;
+    const re4 = /([A-Z][a-z]+[ \t]+[A-Z][a-z]+)[ \t]+Chief Executive Officer/;
     const m4 = texto.match(re4);
-    if (m4 && !NO_NOMBRE.test(m4[1].trim())) compCEO.nombre = m4[1].trim();
+    if (m4) {
+      const n = limpiarNombre(m4[1]);
+      if (!NO_NOMBRE.test(n)) compCEO.nombre = n;
+    }
   }
 
   // Extraer compensación total si tenemos el nombre
   if (compCEO.nombre !== NA) {
     const primerNombre = compCEO.nombre.split(/\s+/)[0];
-    const totalRe = new RegExp(
-      `${primerNombre}[\\s\\S]{0,800}?\\$([\\d,]{5,})`,
-      "i"
-    );
+    const totalRe = new RegExp(`${primerNombre}[\\s\\S]{0,800}?\\$([\\d,]{5,})`, "i");
     const tm = texto.match(totalRe);
     if (tm) compCEO.total = `$${tm[1]}`;
   }
@@ -211,8 +231,9 @@ function parseDef14a(texto: string) {
   if (compCEO.nombre === NA) {
     const compRe = /([A-Z][a-zA-Z\s\.]{5,30})\s+(?:Chief Executive|President and CEO)[^\n]{0,200}?\$\s*([\d,]+)/i;
     const cm = texto.match(compRe);
-    if (cm && !NO_NOMBRE.test(cm[1].trim())) {
-      compCEO = { nombre: cm[1].trim(), total: `$${cm[2]}` };
+    if (cm) {
+      const n = limpiarNombre(cm[1]);
+      if (!NO_NOMBRE.test(n)) compCEO = { nombre: n, total: `$${cm[2]}` };
     }
   }
 
