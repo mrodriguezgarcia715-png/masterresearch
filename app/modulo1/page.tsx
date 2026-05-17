@@ -72,6 +72,12 @@ type ResumenEjecutivo = {
   error?: string;
 };
 
+type ItemsEs = {
+  item1_es:  string;
+  item1a_es: string;
+  item7_es:  string;
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const NA = "Informacion no disponible";
@@ -144,12 +150,18 @@ function calcularRespuestas(
   datos: DatosAnalisis,
   yh: DatosYahoo | null,
   gl: DatosGlassdoor | null,
-  sec: DatosSEC | null
+  sec: DatosSEC | null,
+  ies?: ItemsEs | null
 ): Respuestas {
   const na = "Informacion no disponible";
+  // Texto en ingles (para snip() con keywords en ingles)
   const t1  = datos.items.item1.contenido;
   const t1a = datos.items.item1a.contenido;
   const t7  = datos.items.item7.contenido;
+  // Traducciones en espanol para p1, p7, p8 (items completos)
+  const t1_es  = ies?.item1_es;
+  const t1a_es = ies?.item1a_es;
+  const t7_es  = ies?.item7_es;
 
   const def    = sec?.def14a && typeof sec.def14a !== "string" ? sec.def14a as Exclude<DatosSEC["def14a"], string> : null;
   const dirs   = Array.isArray(def?.directores)      ? (def!.directores as Director[])     : null;
@@ -161,14 +173,14 @@ function calcularRespuestas(
 
   return {
     // BLOQUE A
-    p1: head(t1, 500) || na,
+    p1: head(t1_es ?? t1, 2000) || na,
     p2: snip(t1, ["customer", "client", "consumer", "buyer", "user", "subscriber"]) || na,
     p3: snip(t1, ["competitive advantage", "brand", "network effect", "switching cost", "proprietary", "patent", "intellectual property", "moat"]) || na,
     p4: snip(t1, ["competition", "competitor", "market share", "industry", "rival", "disrupt"]) || na,
     p5: snip(t1, ["brand", "pric", "premium", "differentiat", "commodity", "pricing power"]) || na,
     p6: snip(t1 + " " + t7, ["innovat", "technolog", "digital", "transform", "adapt", "reinvent", "research and development"]) || na,
-    p7: head(t1a, 500) || na,
-    p8: snip(t1 + " " + t7, ["long-term", "long term", "sustainable", "future", "scale", "growth driver"]) || na,
+    p7: head(t1a_es ?? t1a, 2000) || na,
+    p8: head(t7_es ?? t7, 1000) || snip(t1 + " " + t7, ["long-term", "long term", "sustainable", "future", "scale", "growth driver"]) || na,
     p9: snip(t7, ["acqui", "repurchas", "buyback", "dividend", "capital return", "return on", "share repurchase"]) || na,
 
     // BLOQUE B
@@ -724,6 +736,8 @@ export default function Modulo1() {
   const [respuestas, setRespuestas]                 = useState<Respuestas | null>(null);
   const [resumen, setResumen]                       = useState<ResumenEjecutivo | null>(null);
   const [cargandoResumen, setCargandoResumen]       = useState(false);
+  const [itemsEs, setItemsEs]                       = useState<ItemsEs | null>(null);
+  const [cargandoTraduccion, setCargandoTraduccion] = useState(false);
   const [ultimaDescarga, setUltimaDescarga]         = useState<{ ticker: string; empresa: string; fechaHora: string } | null>(null);
 
   useEffect(() => {
@@ -732,6 +746,13 @@ export default function Modulo1() {
       if (raw) setUltimaDescarga(JSON.parse(raw));
     } catch { /* ignore */ }
   }, []);
+
+  // Cuando llega la traduccion, recalcular respuestas si el analisis ya fue generado
+  useEffect(() => {
+    if (itemsEs && datos && respuestas) {
+      setRespuestas(calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC, itemsEs));
+    }
+  }, [itemsEs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function analizar() {
     const tick = ticker.trim().toUpperCase();
@@ -747,6 +768,8 @@ export default function Modulo1() {
     setRespuestas(null);
     setResumen(null);
     setCargandoResumen(false);
+    setItemsEs(null);
+    setCargandoTraduccion(false);
     setCargandoYahoo(true);
     setCargandoGlassdoor(false);
     setCargandoSEC(true);
@@ -792,10 +815,26 @@ export default function Modulo1() {
         temp.items = msg.items;
 
       } else if (msg.tipo === "completo") {
-        setDatos(temp as DatosAnalisis);
+        const datosFinales = temp as DatosAnalisis;
+        setDatos(datosFinales);
         setCargando(false);
         setEstado("");
         es.close();
+
+        // Traducir los 3 items al espanol en paralelo con el resto
+        setCargandoTraduccion(true);
+        fetch("/api/traducir", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            item1:  datosFinales.items.item1.contenido,
+            item1a: datosFinales.items.item1a.contenido,
+            item7:  datosFinales.items.item7.contenido,
+          }),
+        })
+          .then(r => r.json())
+          .then((d: ItemsEs) => { if (d.item1_es) { setItemsEs(d); } setCargandoTraduccion(false); })
+          .catch(() => setCargandoTraduccion(false));
 
       } else if (msg.tipo === "error") {
         setError(msg.mensaje);
@@ -815,7 +854,7 @@ export default function Modulo1() {
 
   function generarPreguntas() {
     if (!datos) return;
-    const r = calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC);
+    const r = calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC, itemsEs);
     setRespuestas(r);
 
     const tick    = ticker.trim().toUpperCase();
@@ -1030,12 +1069,29 @@ export default function Modulo1() {
 
             {/* Contenido tab */}
             <div className="bg-[#1e293b] rounded-2xl border border-slate-700 p-6 sm:p-8">
-              <h3 className="text-[#f59e0b] font-bold text-sm uppercase tracking-widest mb-4">
-                {datos.items[tabActiva].titulo}
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-[#f59e0b] font-bold text-sm uppercase tracking-widest">
+                  {datos.items[tabActiva].titulo}
+                </h3>
+                {cargandoTraduccion && (
+                  <span className="text-xs text-amber-400 animate-pulse flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    Traduciendo al espanol...
+                  </span>
+                )}
+                {itemsEs && !cargandoTraduccion && (
+                  <span className="text-xs text-emerald-400 px-2 py-0.5 rounded bg-emerald-400/10 border border-emerald-400/20">
+                    Traducido al espanol
+                  </span>
+                )}
+              </div>
               <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-5">
                 <pre className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap font-mono break-words">
-                  {datos.items[tabActiva].contenido}
+                  {tabActiva === "item1"
+                    ? (itemsEs?.item1_es  ?? datos.items.item1.contenido)
+                    : tabActiva === "item1a"
+                    ? (itemsEs?.item1a_es ?? datos.items.item1a.contenido)
+                    : (itemsEs?.item7_es  ?? datos.items.item7.contenido)}
                 </pre>
               </div>
               <p className="text-slate-600 text-xs mt-3">
