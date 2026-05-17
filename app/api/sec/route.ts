@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { jsonResponse } from "../_lib/json";
 
 const UA = "MasterResearch mrodriguezgarcia715@gmail.com";
-const NA = "Información no disponible";
+const NA = "Informacion no disponible";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -166,57 +166,50 @@ function parseDef14a(texto: string) {
   // ── CEO y compensación ──
   let compCEO: CompensacionCEO = { nombre: NA, total: NA };
 
-  // Palabras que NUNCA son nombre de persona (falsos positivos frecuentes)
-  const NO_NOMBRE = /^(None|No\b|Total|Target|Base|Annual|Long|Named|Executive|Summary|Compensation|Plan|Equity|Cash|Grant|Award|Proxy|Notice|Meeting|Vote|Board|Committee|Pension|Benefit|Value|Amount|Number|Shares|Stock|Fiscal|Year|Table|Section|Item|Form|The|Our|We|This|These)/i;
+  // Palabras que nunca son nombre de persona
+  const NO_NOMBRE = /^(Total|Target|Base|Annual|Long|Named|Summary|Compensation|Plan|Equity|Cash|Grant|Award|Proxy|Notice|Meeting|Vote|Board|Committee|Pension|Benefit|Value|Amount|Number|Shares|Stock|Fiscal|Year|Table|Section|Item|Form|The|Our|We|This|These|None|No)\b/i;
 
-  // Limpia ruido que los documentos SEC pegan antes/después del nombre
+  // Elimina palabras de cargo/rol y devuelve solo el nombre propio (Nombre Apellido)
   function limpiarNombre(raw: string): string {
-    return raw
-      .replace(/\s*chief\s+executive.*$/i, "")   // quitar "Chief Executive..." residual
-      .replace(/^\s*(?:none|no)\s+/i, "")        // quitar "None"/"No" del inicio
+    const ROLES = /\b(None|No|Chief|Executive|Officer|President|Vice|Senior|Director|Chair(?:man|person)?|Independent|Principal|Founder|Lead|General|Counsel|Financial|Operating|Technology|Marketing|Legal|Human|Resources|Compliance|Corporate|Head|Managing|and|since|Key|Skills|Qualifications)\b/gi;
+    const cleaned = raw
+      .replace(ROLES, " ")
       .replace(/\s{2,}/g, " ")
       .trim();
+    const m = cleaned.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\b/);
+    return m ? m[1] : "";
   }
 
-  // Estrategia 1: lista de directores ya parseada — busca "Chief Executive" en nombre O cargo
-  const ceoDir = directores.find(d =>
+  // Estrategia 1: iterar TODOS los directores etiquetados como CEO (no solo el primero)
+  const ceoDirs = directores.filter(d =>
     /chief executive officer/i.test(d.cargo) ||
     /chief executive/i.test(d.nombre)
   );
-  if (ceoDir) {
+  for (const ceoDir of ceoDirs) {
     const nombrePuro = limpiarNombre(ceoDir.nombre);
     if (nombrePuro.length > 3 && !NO_NOMBRE.test(nombrePuro)) {
       compCEO.nombre = nombrePuro;
+      break;
     }
   }
 
-  // Estrategia 2: "[Nombre]\nChief Executive Officer" — patrón DEF 14A más común
+  // Estrategia 2: "[Nombre] Chief Executive Officer" en texto continuo — itera todos los matches
   if (compCEO.nombre === NA) {
-    const re2 = /([A-Z][a-z]+(?:[ \t]+[A-Z]\.?[ \t]*)?(?:[ \t]+[A-Z][a-z]+){1,2})\s*[\n\r]+\s*Chief Executive Officer/;
-    const m2 = texto.match(re2);
-    if (m2) {
-      const n = limpiarNombre(m2[1]);
-      if (!NO_NOMBRE.test(n)) compCEO.nombre = n;
+    const re2 = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})\s+Chief Executive Officer/g;
+    let m2: RegExpExecArray | null;
+    while ((m2 = re2.exec(texto)) !== null) {
+      const n = m2[1].trim();
+      if (!NO_NOMBRE.test(n)) { compCEO.nombre = n; break; }
     }
   }
 
-  // Estrategia 3: "Chief Executive Officer" seguido de nombre en la siguiente línea
+  // Estrategia 3: "Chief Executive Officer" seguido de nombre
   if (compCEO.nombre === NA) {
-    const re3 = /Chief Executive Officer\W{0,5}[\n\r]+\s*([A-Z][a-z]+(?:[ \t]+[A-Z]\.?[ \t]*)?(?:[ \t]+[A-Z][a-z]+){1,2})/;
-    const m3 = texto.match(re3);
-    if (m3) {
-      const n = limpiarNombre(m3[1]);
-      if (!NO_NOMBRE.test(n)) compCEO.nombre = n;
-    }
-  }
-
-  // Estrategia 4: "[Nombre] Chief Executive Officer" en misma línea — toma solo últimas 2 palabras antes del título
-  if (compCEO.nombre === NA) {
-    const re4 = /([A-Z][a-z]+[ \t]+[A-Z][a-z]+)[ \t]+Chief Executive Officer/;
-    const m4 = texto.match(re4);
-    if (m4) {
-      const n = limpiarNombre(m4[1]);
-      if (!NO_NOMBRE.test(n)) compCEO.nombre = n;
+    const re3 = /Chief Executive Officer\W{1,10}([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2})/g;
+    let m3: RegExpExecArray | null;
+    while ((m3 = re3.exec(texto)) !== null) {
+      const n = m3[1].trim();
+      if (!NO_NOMBRE.test(n)) { compCEO.nombre = n; break; }
     }
   }
 
@@ -226,16 +219,6 @@ function parseDef14a(texto: string) {
     const totalRe = new RegExp(`${primerNombre}[\\s\\S]{0,800}?\\$([\\d,]{5,})`, "i");
     const tm = texto.match(totalRe);
     if (tm) compCEO.total = `$${tm[1]}`;
-  }
-
-  // Fallback original con filtro de falsos positivos
-  if (compCEO.nombre === NA) {
-    const compRe = /([A-Z][a-zA-Z\s\.]{5,30})\s+(?:Chief Executive|President and CEO)[^\n]{0,200}?\$\s*([\d,]+)/i;
-    const cm = texto.match(compRe);
-    if (cm) {
-      const n = limpiarNombre(cm[1]);
-      if (!NO_NOMBRE.test(n)) compCEO = { nombre: n, total: `$${cm[2]}` };
-    }
   }
 
   // ── Clases de acciones ──

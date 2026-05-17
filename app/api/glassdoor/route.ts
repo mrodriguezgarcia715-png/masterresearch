@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { jsonResponse } from "../_lib/json";
 
-const NA = "Información no disponible";
+const NA = "Informacion no disponible";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -74,7 +74,7 @@ type ResumenEjecutivo = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const NA = "Información no disponible";
+const NA = "Informacion no disponible";
 
 function n(v?: number | string | null): string {
   if (v === undefined || v === null || v === "") return NA;
@@ -146,7 +146,7 @@ function calcularRespuestas(
   gl: DatosGlassdoor | null,
   sec: DatosSEC | null
 ): Respuestas {
-  const na = "Información no disponible";
+  const na = "Informacion no disponible";
   const t1  = datos.items.item1.contenido;
   const t1a = datos.items.item1a.contenido;
   const t7  = datos.items.item7.contenido;
@@ -257,8 +257,8 @@ function SeccionPreguntas({
             </div>
             <div className="space-y-3">
               {lista.map(p => {
-                const resp = respuestasEsp?.[p.id] ?? respuestas[p.id] ?? "Información no disponible";
-                const sinDato = resp === "Información no disponible";
+                const resp = respuestasEsp?.[p.id] ?? respuestas[p.id] ?? "Informacion no disponible";
+                const sinDato = resp === "Informacion no disponible";
                 return (
                   <div key={p.id} className="bg-[#1e293b] rounded-xl border border-slate-700 p-5">
                     <div className="flex items-start gap-3">
@@ -696,7 +696,7 @@ function SeccionResumenesBloques({ resumen, loading }: { resumen: ResumenEjecuti
               </div>
             ) : (
               <p className="text-slate-200 text-xs leading-relaxed">
-                {resumen?.resumenBloques?.[b.key] ?? "Información no disponible"}
+                {resumen?.resumenBloques?.[b.key] ?? "Informacion no disponible"}
               </p>
             )}
           </div>
@@ -844,7 +844,7 @@ export default function Modulo1() {
           if (!prev) return prev;
           const updated = { ...prev };
           for (const [key, texto] of Object.entries(ddg)) {
-            if (updated[key] === "Información no disponible" && texto) {
+            if (updated[key] === "Informacion no disponible" && texto) {
               updated[key] = texto;
             }
           }
