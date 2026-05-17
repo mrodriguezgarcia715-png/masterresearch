@@ -22,22 +22,17 @@ function pct(val: unknown): string {
   return `${n}%`;
 }
 
-// Cabeceras que imitan un navegador real para evitar bloqueos básicos
-const BROWSER_HEADERS: Record<string, string> = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  Accept: "application/json, text/javascript, */*; q=0.01",
-  "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
-  "Accept-Encoding": "gzip, deflate, br",
-  Referer: "https://www.glassdoor.com/",
-  "X-Requested-With": "XMLHttpRequest",
-};
+function toSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
 
-// ── Estrategia 1: autocomplete JSON de Glassdoor ─────────────────────────────
+// ── Tipo compartido ───────────────────────────────────────────────────────────
 
-type GlassdoorEmployer = {
-  id?: number;
+type EmpleadorData = {
   name?: string;
   overallRating?: string | number;
   ratingDescription?: string;
@@ -46,110 +41,127 @@ type GlassdoorEmployer = {
   ceoApproval?: string | number;
   ceoName?: string;
   industryName?: string;
-  squareLogo?: string;
 };
 
-async function buscarViaAutocomplete(
-  termino: string
-): Promise<GlassdoorEmployer | null> {
-  const url =
-    `https://www.glassdoor.com/api/employer/find.htm` +
-    `?term=${encodeURIComponent(termino)}&autocomplete=true&countryId=1`;
+// ── Estrategia 1: autocomplete JSON de Glassdoor ─────────────────────────────
 
-  const res = await fetch(url, {
-    headers: BROWSER_HEADERS,
-    // Next.js: no cachear (datos frescos)
-    cache: "no-store",
-  });
+async function buscarViaGlassdoor(termino: string): Promise<EmpleadorData | null> {
+  try {
+    const url =
+      `https://www.glassdoor.com/api/employer/find.htm` +
+      `?term=${encodeURIComponent(termino)}&autocomplete=true&countryId=1`;
 
-  if (!res.ok) return null;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+        Referer: "https://www.glassdoor.com/",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    });
 
-  const contentType = res.headers.get("content-type") ?? "";
-  if (!contentType.includes("json")) return null;
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("json")) return null;
 
-  const data = (await res.json()) as GlassdoorEmployer[];
-  if (!Array.isArray(data) || data.length === 0) return null;
+    const data = (await res.json()) as EmpleadorData[];
+    if (!Array.isArray(data) || data.length === 0) return null;
 
-  // Preferir coincidencia exacta de nombre; si no, el primero
-  const exacto = data.find(
-    (e) => e.name?.toLowerCase() === termino.toLowerCase()
-  );
-  return exacto ?? data[0];
+    const exacto = data.find(
+      (e) => e.name?.toLowerCase() === termino.toLowerCase()
+    );
+    return exacto ?? data[0];
+  } catch {
+    return null;
+  }
 }
 
-// ── Estrategia 2: scraping HTML + JSON-LD ────────────────────────────────────
+// ── Estrategia 2: Indeed employer profile ────────────────────────────────────
 
-type JsonLd = {
-  "@type"?: string;
-  aggregateRating?: {
-    ratingValue?: string | number;
-    reviewCount?: string | number;
-    bestRating?: string | number;
+async function buscarViaIndeed(
+  termino: string,
+  ticker: string
+): Promise<EmpleadorData | null> {
+  const slugs = [...new Set([ticker.toLowerCase(), toSlug(termino)])].filter(Boolean);
+
+  const INDEED_HEADERS = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
   };
-  name?: string;
-};
 
-async function buscarViaHtml(
-  termino: string
-): Promise<Partial<GlassdoorEmployer> | null> {
-  // Búsqueda en la página pública de Glassdoor
-  const url = `https://www.glassdoor.com/Search/results.htm?keyword=${encodeURIComponent(termino)}`;
+  for (const slug of slugs) {
+    for (const path of [`/cmp/${slug}/reviews`, `/cmp/${slug}`]) {
+      try {
+        const res = await fetch(`https://www.indeed.com${path}`, {
+          headers: INDEED_HEADERS,
+          cache: "no-store",
+          signal: AbortSignal.timeout(4000),
+        });
 
-  const res = await fetch(url, {
-    headers: {
-      ...BROWSER_HEADERS,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-    cache: "no-store",
-  });
+        if (!res.ok) continue;
+        const html = await res.text();
 
-  if (!res.ok) return null;
+        // JSON-LD structured data
+        const scriptTags = html.match(
+          /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+        );
+        if (scriptTags) {
+          for (const block of scriptTags) {
+            try {
+              const jsonText = block.replace(/<\/?script[^>]*>/gi, "").trim();
+              const ld = JSON.parse(jsonText) as {
+                name?: string;
+                aggregateRating?: {
+                  ratingValue?: string | number;
+                  reviewCount?: string | number;
+                };
+              };
+              if (ld.aggregateRating?.ratingValue) {
+                return {
+                  name: ld.name ?? termino,
+                  overallRating: ld.aggregateRating.ratingValue,
+                  numberOfRatings:
+                    Number(ld.aggregateRating.reviewCount) || undefined,
+                };
+              }
+            } catch { /* bloque malformado */ }
+          }
+        }
 
-  const html = await res.text();
+        // Regex fallback
+        const ratingMatch  = html.match(/["']ratingValue["']\s*:\s*["']?([\d.]+)/);
+        const reviewsMatch = html.match(/["'](?:reviewCount|numberOfRatings)["']\s*:\s*["']?(\d+)/);
+        const recMatch     = html.match(/["']recommendToFriend["']\s*:\s*["']?([\d.]+)/);
+        const ceoMatch     = html.match(/["']ceoRating["']\s*:\s*["']?([\d.]+)/);
 
-  // Intentar extraer JSON-LD con aggregateRating
-  const ldMatch = html.match(
-    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-  );
-
-  if (!ldMatch) return null;
-
-  for (const block of ldMatch) {
-    try {
-      const jsonText = block.replace(/<\/?script[^>]*>/gi, "").trim();
-      const ld = JSON.parse(jsonText) as JsonLd;
-      if (ld.aggregateRating) {
-        return {
-          name: ld.name,
-          overallRating: ld.aggregateRating.ratingValue,
-          numberOfRatings: Number(ld.aggregateRating.reviewCount) || undefined,
-        };
-      }
-    } catch {
-      // bloque JSON malformado, continuar
+        if (ratingMatch) {
+          return {
+            name: termino,
+            overallRating: ratingMatch[1],
+            numberOfRatings: reviewsMatch ? Number(reviewsMatch[1]) : undefined,
+            recommendToFriend: recMatch?.[1],
+            ceoApproval: ceoMatch?.[1],
+          };
+        }
+      } catch { /* probar siguiente slug/path */ }
     }
   }
 
-  // Fallback: buscar el rating con regex en el HTML
-  const ratingMatch = html.match(/overallRating["']?\s*:\s*["']?([\d.]+)/);
-  const reviewsMatch = html.match(/numberOfRatings["']?\s*:\s*(\d+)/);
-  const ceoMatch = html.match(/ceoApproval["']?\s*:\s*["']?([\d.]+)/);
-  const recMatch = html.match(/recommendToFriend["']?\s*:\s*["']?([\d.]+)/);
-
-  if (!ratingMatch) return null;
-
-  return {
-    overallRating: ratingMatch[1],
-    numberOfRatings: reviewsMatch ? Number(reviewsMatch[1]) : undefined,
-    ceoApproval: ceoMatch?.[1],
-    recommendToFriend: recMatch?.[1],
-  };
+  return null;
 }
 
 // ── Handler principal ─────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase() ?? null;
+  const ticker  = req.nextUrl.searchParams.get("ticker")?.toUpperCase() ?? null;
   const empresa = req.nextUrl.searchParams.get("empresa") ?? null;
 
   if (!ticker && !empresa) {
@@ -159,38 +171,29 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Usar el nombre de empresa si viene; si no, el ticker como búsqueda
   const termino = empresa ?? ticker!;
 
   const vacio = {
     ticker,
     empresa: empresa ?? ticker,
-    ratingGeneral: NA,
+    ratingGeneral:    NA,
     descripcionRating: NA,
-    numeroResenas: NA,
-    recomendarian: NA,
-    aprobacionCEO: NA,
-    nombreCEO: NA,
-    industria: NA,
-    fuente: "Glassdoor",
+    numeroResenas:    NA,
+    recomendarian:    NA,
+    aprobacionCEO:    NA,
+    nombreCEO:        NA,
+    industria:        NA,
+    fuente:           NA,
   };
 
-  let datos: Partial<GlassdoorEmployer> | null = null;
+  // Estrategia 1: Glassdoor autocomplete JSON
+  let datos: EmpleadorData | null = await buscarViaGlassdoor(termino);
+  let fuente = "Glassdoor";
 
-  try {
-    // Estrategia 1: JSON autocomplete
-    datos = await buscarViaAutocomplete(termino);
-  } catch {
-    // continuar con estrategia 2
-  }
-
+  // Estrategia 2: Indeed (si Glassdoor bloqueó o no devolvió datos)
   if (!datos) {
-    try {
-      // Estrategia 2: scraping HTML
-      datos = await buscarViaHtml(termino);
-    } catch {
-      // ambas fallaron → devolver NAs
-    }
+    datos = await buscarViaIndeed(termino, ticker ?? termino);
+    fuente = "Indeed";
   }
 
   if (!datos) {
@@ -199,14 +202,14 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ticker,
-    empresa: datos.name ?? empresa ?? ticker,
-    ratingGeneral: safeNum(datos.overallRating),
+    empresa:          datos.name ?? empresa ?? ticker,
+    ratingGeneral:    safeNum(datos.overallRating),
     descripcionRating: safeStr(datos.ratingDescription),
-    numeroResenas: safeNum(datos.numberOfRatings),
-    recomendarian: pct(datos.recommendToFriend),
-    aprobacionCEO: pct(datos.ceoApproval),
-    nombreCEO: safeStr(datos.ceoName),
-    industria: safeStr(datos.industryName),
-    fuente: "Glassdoor",
+    numeroResenas:    safeNum(datos.numberOfRatings),
+    recomendarian:    pct(datos.recommendToFriend),
+    aprobacionCEO:    pct(datos.ceoApproval),
+    nombreCEO:        safeStr(datos.ceoName),
+    industria:        safeStr(datos.industryName),
+    fuente,
   });
 }

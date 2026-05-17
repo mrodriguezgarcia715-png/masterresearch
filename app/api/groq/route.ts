@@ -67,6 +67,20 @@ const BLOQUES_KEYS = {
 };
 
 function buildPrompt(ticker: string, empresa: string, respuestas: Record<string, string>): string {
+  const todasLasKeys = [...BLOQUES_KEYS.A, ...BLOQUES_KEYS.B, ...BLOQUES_KEYS.C];
+  const sinDato = todasLasKeys.filter(
+    k => !respuestas[k] || respuestas[k] === "Información no disponible"
+  ).length;
+  const pctSinDato = Math.round((sinDato / todasLasKeys.length) * 100);
+
+  const notaPenalizacion = pctSinDato > 30
+    ? `⚠ PENALIZACIÓN OBLIGATORIA POR DATOS FALTANTES: El ${pctSinDato}% de las secciones (${sinDato} de ${todasLasKeys.length}) tienen "Información no disponible". Reglas de penalización que DEBES aplicar al calcular la puntuación:
+  - 30-50% faltante → resta 5-10 puntos al score base.
+  - 50-70% faltante → resta 10-20 puntos al score base.
+  - Más del 70% faltante → la puntuación máxima posible es 50.
+  Refleja esta limitación también en las debilidades y en la conclusión.`
+    : `Cobertura de datos: ${100 - pctSinDato}% (${todasLasKeys.length - sinDato}/${todasLasKeys.length} secciones disponibles). No aplica penalización por datos faltantes.`;
+
   function fmtBloque(keys: string[]): string {
     return keys.map(k => `[${NOMBRES[k]}]\n${respuestas[k] ?? "Información no disponible"}`).join("\n\n");
   }
@@ -88,6 +102,7 @@ INSTRUCCIONES:
 - Sé directo, concreto y útil para un inversor.
 - Todo en español.
 - Los resúmenes por bloque deben ser párrafos fluidos de 2-3 oraciones que sinteticen los hallazgos clave de ese bloque.
+- ${notaPenalizacion}
 
 Responde ÚNICAMENTE con un JSON válido con exactamente este formato (sin markdown, sin texto adicional):
 {
