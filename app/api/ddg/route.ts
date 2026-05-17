@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { jsonResponse } from "../_lib/json";
 
-// DuckDuckGo Instant Answer API — gratuita, sin clave
 const DDG = "https://api.duckduckgo.com/";
 
 async function ddgQuery(q: string): Promise<string> {
@@ -20,7 +19,6 @@ async function ddgQuery(q: string): Promise<string> {
       RelatedTopics?: Array<{ Text?: string }>;
     };
 
-    // Preferir respuesta directa, luego abstract, luego primer tema relacionado
     const texto =
       data.Answer?.trim() ||
       data.AbstractText?.trim() ||
@@ -41,17 +39,19 @@ export async function GET(req: NextRequest) {
     return jsonResponse({}, 400);
   }
 
-  // Consultas específicas por sección
+  // Queries específicas por pregunta y por sección
   const queries: Record<string, string> = {
-    p9:  `${empresa} ${ticker} stock buyback share repurchase dividend capital allocation`,
-    p11: `${empresa} institutional shareholders ownership Vanguard BlackRock`,
-    p16: `${empresa} related party transactions conflict of interest`,
-    p17: `${empresa} long-term debt bonds credit rating Moody S&P`,
-    p18: `${empresa} anti-takeover poison pill staggered board shareholder rights`,
-    p22: `${empresa} employee satisfaction workplace culture Glassdoor rating`,
+    p9:          `${empresa} ${ticker} stock buyback share repurchase dividend capital allocation`,
+    p16:         `${empresa} related party transactions conflict of interest`,
+    p17:         `${empresa} long-term debt bonds credit rating Moody S&P`,
+    p18:         `${empresa} anti-takeover poison pill staggered board shareholder rights`,
+    // Secciones vacías — queries específicas por categoría
+    mercado:     `${ticker} stock analysts price target 2026`,
+    empleados:   `${empresa} employee satisfaction rating`,
+    gobierno:    `${empresa} corporate governance board directors`,
+    accionistas: `${empresa} institutional shareholders 2026`,
   };
 
-  // Ejecutar todas las consultas en paralelo
   const resultados: Record<string, string> = {};
   await Promise.all(
     Object.entries(queries).map(async ([key, q]) => {

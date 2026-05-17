@@ -60,6 +60,7 @@ type DatosSEC = {
 };
 
 type Respuestas = Record<string, string>;
+type Fuentes    = Record<string, string>;
 
 type ResumenEjecutivo = {
   respuestasEsp?: Record<string, string>;
@@ -146,19 +147,36 @@ function head(texto: string, chars: number): string {
   return texto.slice(0, chars).trim() + (texto.length > chars ? "…" : "");
 }
 
+function validarTexto(texto: string | undefined | null): string {
+  if (!texto) return "Informacion no disponible";
+  const t = texto.trim();
+  if (!t || t === "Informacion no disponible") return "Informacion no disponible";
+  if (/^(see|refer to)\s+(item|note|section|exhibit)/i.test(t)) return "Informacion no disponible";
+  if (/^\[.{0,80}\]$/.test(t)) return "Informacion no disponible";
+  if (/^(n\/a|na|not applicable|none|pending|tbd)\.?$/i.test(t)) return "Informacion no disponible";
+  return t;
+}
+
+function FuenteBadge({ fuente }: { fuente?: string }) {
+  if (!fuente || fuente === "SEC EDGAR") return null;
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-orange-500/20 border border-orange-500/40 text-orange-400 ml-1 flex-shrink-0 whitespace-nowrap">
+      {fuente}
+    </span>
+  );
+}
+
 function calcularRespuestas(
   datos: DatosAnalisis,
   yh: DatosYahoo | null,
   gl: DatosGlassdoor | null,
   sec: DatosSEC | null,
   ies?: ItemsEs | null
-): Respuestas {
+): { respuestas: Respuestas; fuentes: Fuentes } {
   const na = "Informacion no disponible";
-  // Texto en ingles (para snip() con keywords en ingles)
   const t1  = datos.items.item1.contenido;
   const t1a = datos.items.item1a.contenido;
   const t7  = datos.items.item7.contenido;
-  // Traducciones en espanol para p1, p7, p8 (items completos)
   const t1_es  = ies?.item1_es;
   const t1a_es = ies?.item1a_es;
   const t7_es  = ies?.item7_es;
@@ -171,72 +189,101 @@ function calcularRespuestas(
   const y      = yh && !yh.error ? yh : null;
   const g      = gl && !gl.error ? gl : null;
 
-  return {
+  const SEC = "SEC EDGAR";
+  const YH  = "Yahoo Finance";
+  const GD  = "Glassdoor";
+
+  // Pre-computar valores para reutilizar en fuentes
+  const p9snip  = snip(t7, ["acqui", "repurchas", "buyback", "dividend", "capital return", "return on", "share repurchase"]);
+  const p10val  = clases
+    ? `Tipos de acciones según DEF 14A (${def!.fecha}): ${clases.map(c => c.clase).join(", ")}.`
+    : snip(t1, ["common stock", "class a", "class b", "preferred stock", "dual class", "voting right"]);
+  const p11val  = a13f && a13f.length > 0
+    ? `Top ${Math.min(a13f.length, 10)} accionistas institucionales (13F-HR): ${a13f.slice(0, 10).map((a, i) => `${i + 1}. ${a.gestor} — ${a.acciones} acc. (${a.valor})`).join("; ")}.`
+    : "";
+  const p12val  = dirs
+    ? `Según DEF 14A, las siguientes personas tienen acceso a información privilegiada: ${dirs.slice(0, 8).map(d => `${d.nombre} (${d.cargo})`).join(", ")}.`
+    : "";
+  const p13parts: string[] = [];
+  if (ceoC)              p13parts.push(`CEO reportado: ${ceoC.nombre}.`);
+  else if (g?.nombreCEO) p13parts.push(`CEO según Glassdoor: ${g.nombreCEO}.`);
+  if (g?.aprobacionCEO)  p13parts.push(`Aprobación del CEO (empleados): ${g.aprobacionCEO}.`);
+  const p13extra = snip(t1, ["chief executive officer", "ceo since", "president and ceo"]);
+  if (p13extra) p13parts.push(p13extra);
+  const p13val  = p13parts.join(" ");
+  const p14val  = dirs
+    ? `El directorio tiene ${dirs.length} miembros según DEF 14A. Independientes: ${dirs.filter(d => /independent/i.test(d.cargo)).length}. Miembros: ${dirs.slice(0, 6).map(d => `${d.nombre} (${d.cargo})`).join(", ")}.`
+    : "";
+  const p15val  = ceoC ? `Compensación total del CEO ${ceoC.nombre}: ${ceoC.total} (DEF 14A).` : "";
+  const p16snip = snip(t1a + " " + t1, ["conflict of interest", "related party", "affiliated", "related-party", "holding company", "family member"]);
+  const p17snip = snip(t7, ["debt", "credit facility", "senior notes", "bond", "covenant", "moody", "standard & poor", "s&p", "long-term debt", "borrow"]);
+  const p18snip = snip(t1a + " " + t1, ["poison pill", "golden parachute", "anti-takeover", "staggered board", "shareholder rights plan", "classified board", "defensive measure"]);
+  const p20val  = y ? [
+    y.numAnalistas           ? `${y.numAnalistas} analistas siguen la acción.` : "",
+    y.consenso               ? `Consenso: ${(y.consenso as {compra:unknown;mantener:unknown;venta:unknown}).compra} compra, ${(y.consenso as {compra:unknown;mantener:unknown;venta:unknown}).mantener} mantener, ${(y.consenso as {compra:unknown;mantener:unknown;venta:unknown}).venta} venta.` : "",
+    y.precioObjetivoPromedio ? `Precio objetivo promedio: ${typeof y.precioObjetivoPromedio === "number" ? "$" + (y.precioObjetivoPromedio as number).toFixed(2) : y.precioObjetivoPromedio}.` : "",
+    y.precioActual           ? `Precio actual: ${typeof y.precioActual === "number" ? "$" + (y.precioActual as number).toFixed(2) : y.precioActual}.` : "",
+  ].filter(Boolean).join(" ") : "";
+  const p21val  = y ? [
+    y.freeFloat       ? `Free float: ${typeof y.freeFloat === "number" ? (y.freeFloat as number).toLocaleString() : y.freeFloat} acciones en circulación libre.` : "",
+    y.volumenPromedio ? `Volumen promedio diario: ${typeof y.volumenPromedio === "number" ? (y.volumenPromedio as number).toLocaleString() : y.volumenPromedio} acciones.` : "",
+  ].filter(Boolean).join(" ") : "";
+  const p22val  = g ? [
+    g.ratingGeneral ? `Rating de empleados: ${g.ratingGeneral}/5 (${g.descripcionRating ?? ""}).` : "",
+    g.numeroResenas ? `Basado en ${g.numeroResenas} reseñas.` : "",
+    g.recomendarian ? `${g.recomendarian} de empleados recomendarían la empresa.` : "",
+    g.aprobacionCEO ? `Aprobación del CEO: ${g.aprobacionCEO}.` : "",
+  ].filter(Boolean).join(" ") : "";
+
+  const respuestas: Respuestas = {
     // BLOQUE A
-    p1: head(t1_es ?? t1, 2000) || na,
-    p2: snip(t1, ["customer", "client", "consumer", "buyer", "user", "subscriber"]) || na,
-    p3: snip(t1, ["competitive advantage", "brand", "network effect", "switching cost", "proprietary", "patent", "intellectual property", "moat"]) || na,
-    p4: snip(t1, ["competition", "competitor", "market share", "industry", "rival", "disrupt"]) || na,
-    p5: snip(t1, ["brand", "pric", "premium", "differentiat", "commodity", "pricing power"]) || na,
-    p6: snip(t1 + " " + t7, ["innovat", "technolog", "digital", "transform", "adapt", "reinvent", "research and development"]) || na,
-    p7: head(t1a_es ?? t1a, 2000) || na,
-    p8: head(t7_es ?? t7, 1000) || snip(t1 + " " + t7, ["long-term", "long term", "sustainable", "future", "scale", "growth driver"]) || na,
-    p9: snip(t7, ["acqui", "repurchas", "buyback", "dividend", "capital return", "return on", "share repurchase"]) || na,
-
+    p1:  head(t1_es ?? t1, 2000) || na,
+    p2:  snip(t1, ["customer", "client", "consumer", "buyer", "user", "subscriber"]) || na,
+    p3:  snip(t1, ["competitive advantage", "brand", "network effect", "switching cost", "proprietary", "patent", "intellectual property", "moat"]) || na,
+    p4:  snip(t1, ["competition", "competitor", "market share", "industry", "rival", "disrupt"]) || na,
+    p5:  snip(t1, ["brand", "pric", "premium", "differentiat", "commodity", "pricing power"]) || na,
+    p6:  snip(t1 + " " + t7, ["innovat", "technolog", "digital", "transform", "adapt", "reinvent", "research and development"]) || na,
+    p7:  head(t1a_es ?? t1a, 2000) || na,
+    p8:  head(t7_es ?? t7, 1000) || snip(t1 + " " + t7, ["long-term", "long term", "sustainable", "future", "scale", "growth driver"]) || na,
+    p9:  p9snip || na,
     // BLOQUE B
-    p10: clases
-      ? `Tipos de acciones según DEF 14A (${def!.fecha}): ${clases.map(c => c.clase).join(", ")}.`
-      : snip(t1, ["common stock", "class a", "class b", "preferred stock", "dual class", "voting right"]) || na,
-    p11: a13f && a13f.length > 0
-      ? `Top ${Math.min(a13f.length, 10)} accionistas institucionales (13F-HR): ${a13f.slice(0, 10).map((a, i) => `${i + 1}. ${a.gestor} — ${a.acciones} acc. (${a.valor})`).join("; ")}.`
-      : na,
-    p12: dirs
-      ? `Según DEF 14A, las siguientes personas tienen acceso a información privilegiada: ${dirs.slice(0, 8).map(d => `${d.nombre} (${d.cargo})`).join(", ")}.`
-      : na,
-    p13: (() => {
-      const partes: string[] = [];
-      if (ceoC)         partes.push(`CEO reportado: ${ceoC.nombre}.`);
-      else if (g?.nombreCEO) partes.push(`CEO según Glassdoor: ${g.nombreCEO}.`);
-      if (g?.aprobacionCEO) partes.push(`Aprobación del CEO (empleados): ${g.aprobacionCEO}.`);
-      const extra = snip(t1, ["chief executive officer", "ceo since", "president and ceo"]);
-      if (extra) partes.push(extra);
-      return partes.join(" ") || na;
-    })(),
-    p14: dirs
-      ? `El directorio tiene ${dirs.length} miembros según DEF 14A. Independientes: ${dirs.filter(d => /independent/i.test(d.cargo)).length}. Miembros: ${dirs.slice(0, 6).map(d => `${d.nombre} (${d.cargo})`).join(", ")}.`
-      : na,
-    p15: ceoC
-      ? `Compensación total del CEO ${ceoC.nombre}: ${ceoC.total} (DEF 14A).`
-      : na,
-    p16: snip(t1a + " " + t1, ["conflict of interest", "related party", "affiliated", "related-party", "holding company", "family member"]) || na,
-    p17: snip(t7, ["debt", "credit facility", "senior notes", "bond", "covenant", "moody", "standard & poor", "s&p", "long-term debt", "borrow"]) || na,
-    p18: snip(t1a + " " + t1, ["poison pill", "golden parachute", "anti-takeover", "staggered board", "shareholder rights plan", "classified board", "defensive measure"]) || na,
-
+    p10: p10val || na,
+    p11: p11val || na,
+    p12: p12val || na,
+    p13: p13val || na,
+    p14: p14val || na,
+    p15: p15val || na,
+    p16: p16snip || na,
+    p17: p17snip || na,
+    p18: p18snip || na,
     // BLOQUE C
     p19: `La empresa presenta reportes 10-K al SEC EDGAR de forma regular. Último 10-K: ${datos.filing.fecha} (accession ${datos.filing.accession}).${snip(t1a, ["restatement", "material weakness", "internal control", "accounting irregularity"]) ? " " + snip(t1a, ["restatement", "material weakness", "internal control"]) : ""}`,
-    p20: y
-      ? [
-          y.numAnalistas          ? `${y.numAnalistas} analistas siguen la acción.` : "",
-          y.consenso              ? `Consenso: ${(y.consenso as {compra:unknown;mantener:unknown;venta:unknown}).compra} compra, ${(y.consenso as {compra:unknown;mantener:unknown;venta:unknown}).mantener} mantener, ${(y.consenso as {compra:unknown;mantener:unknown;venta:unknown}).venta} venta.` : "",
-          y.precioObjetivoPromedio ? `Precio objetivo promedio: ${typeof y.precioObjetivoPromedio === "number" ? "$" + (y.precioObjetivoPromedio as number).toFixed(2) : y.precioObjetivoPromedio}.` : "",
-          y.precioActual          ? `Precio actual: ${typeof y.precioActual === "number" ? "$" + (y.precioActual as number).toFixed(2) : y.precioActual}.` : "",
-        ].filter(Boolean).join(" ") || na
-      : na,
-    p21: y
-      ? [
-          y.freeFloat      ? `Free float: ${typeof y.freeFloat === "number" ? (y.freeFloat as number).toLocaleString() : y.freeFloat} acciones en circulación libre.` : "",
-          y.volumenPromedio ? `Volumen promedio diario: ${typeof y.volumenPromedio === "number" ? (y.volumenPromedio as number).toLocaleString() : y.volumenPromedio} acciones.` : "",
-        ].filter(Boolean).join(" ") || na
-      : na,
-    p22: g
-      ? [
-          g.ratingGeneral  ? `Rating de empleados: ${g.ratingGeneral}/5 (${g.descripcionRating ?? ""}).` : "",
-          g.numeroResenas  ? `Basado en ${g.numeroResenas} reseñas.` : "",
-          g.recomendarian  ? `${g.recomendarian} de empleados recomendarían la empresa.` : "",
-          g.aprobacionCEO  ? `Aprobación del CEO: ${g.aprobacionCEO}.` : "",
-        ].filter(Boolean).join(" ") || na
-      : na,
+    p20: p20val || na,
+    p21: p21val || na,
+    p22: p22val || na,
   };
+
+  const p13fuente = ceoC ? SEC : (g?.nombreCEO || g?.aprobacionCEO) ? GD : p13extra ? SEC : "";
+
+  const fuentes: Fuentes = {
+    p1: SEC, p2: SEC, p3: SEC, p4: SEC, p5: SEC, p6: SEC, p7: SEC, p8: SEC,
+    p9:  p9snip  ? SEC : "",
+    p10: p10val  ? SEC : "",
+    p11: p11val  ? SEC : "",
+    p12: p12val  ? SEC : "",
+    p13: p13fuente,
+    p14: p14val  ? SEC : "",
+    p15: p15val  ? SEC : "",
+    p16: p16snip ? SEC : "",
+    p17: p17snip ? SEC : "",
+    p18: p18snip ? SEC : "",
+    p19: SEC,
+    p20: p20val ? YH : "",
+    p21: p21val ? YH : "",
+    p22: p22val ? GD : "",
+  };
+
+  return { respuestas, fuentes };
 }
 
 // ── Sección de 22 preguntas ────────────────────────────────────────────────────
@@ -250,9 +297,11 @@ const BLOQUES_INFO = {
 function SeccionPreguntas({
   respuestas,
   respuestasEsp,
+  fuentes,
 }: {
   respuestas: Respuestas;
   respuestasEsp?: Record<string, string>;
+  fuentes?: Fuentes;
 }) {
   return (
     <div className="space-y-8">
@@ -269,8 +318,10 @@ function SeccionPreguntas({
             </div>
             <div className="space-y-3">
               {lista.map(p => {
-                const resp = respuestasEsp?.[p.id] ?? respuestas[p.id] ?? "Informacion no disponible";
-                const sinDato = resp === "Informacion no disponible";
+                const baseResp = validarTexto(respuestas[p.id]);
+                const resp     = respuestasEsp?.[p.id] ?? baseResp;
+                const fuente   = fuentes?.[p.id] ?? "";
+                const sinDato  = resp === "Informacion no disponible";
                 return (
                   <div key={p.id} className="bg-[#1e293b] rounded-xl border border-slate-700 p-5">
                     <div className="flex items-start gap-3">
@@ -278,7 +329,10 @@ function SeccionPreguntas({
                         {p.num}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-white font-semibold text-sm mb-1">{p.titulo}</p>
+                        <div className="flex items-center flex-wrap gap-1 mb-1">
+                          <p className="text-white font-semibold text-sm">{p.titulo}</p>
+                          {!sinDato && <FuenteBadge fuente={fuente} />}
+                        </div>
                         <p className="text-slate-500 text-[11px] mb-3 leading-relaxed">{p.pregunta}</p>
                         <p className={`text-xs leading-relaxed ${sinDato ? "text-slate-600 italic" : "text-slate-200"}`}>
                           {resp}
@@ -734,6 +788,7 @@ export default function Modulo1() {
   const [datosSEC, setDatosSEC]                     = useState<DatosSEC | null>(null);
   const [cargandoSEC, setCargandoSEC]               = useState(false);
   const [respuestas, setRespuestas]                 = useState<Respuestas | null>(null);
+  const [fuentes, setFuentes]                       = useState<Fuentes>({});
   const [resumen, setResumen]                       = useState<ResumenEjecutivo | null>(null);
   const [cargandoResumen, setCargandoResumen]       = useState(false);
   const [itemsEs, setItemsEs]                       = useState<ItemsEs | null>(null);
@@ -750,7 +805,9 @@ export default function Modulo1() {
   // Cuando llega la traduccion, recalcular respuestas si el analisis ya fue generado
   useEffect(() => {
     if (itemsEs && datos && respuestas) {
-      setRespuestas(calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC, itemsEs));
+      const { respuestas: r, fuentes: f } = calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC, itemsEs);
+      setRespuestas(r);
+      setFuentes(f);
     }
   }, [itemsEs]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -766,6 +823,7 @@ export default function Modulo1() {
     setDatosGlassdoor(null);
     setDatosSEC(null);
     setRespuestas(null);
+    setFuentes({});
     setResumen(null);
     setCargandoResumen(false);
     setItemsEs(null);
@@ -854,8 +912,9 @@ export default function Modulo1() {
 
   function generarPreguntas() {
     if (!datos) return;
-    const r = calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC, itemsEs);
+    const { respuestas: r, fuentes: f } = calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC, itemsEs);
     setRespuestas(r);
+    setFuentes(f);
 
     const tick    = ticker.trim().toUpperCase();
     const empresa = datos.nombre;
@@ -879,16 +938,35 @@ export default function Modulo1() {
     fetch(`/api/ddg?ticker=${tick}&empresa=${encodeURIComponent(empresa)}`)
       .then(res => res.json())
       .then((ddg: Record<string, string>) => {
-        setRespuestas(prev => {
-          if (!prev) return prev;
-          const updated = { ...prev };
-          for (const [key, texto] of Object.entries(ddg)) {
-            if (updated[key] === "Informacion no disponible" && texto) {
-              updated[key] = texto;
-            }
+        const NA_STR  = "Informacion no disponible";
+        const DDG_SRC = "DuckDuckGo";
+        const respUpdate: Record<string, string> = {};
+        const fuUpdate: Record<string, string>   = {};
+
+        // Preguntas específicas
+        for (const k of ["p9", "p16", "p17", "p18"] as const) {
+          if (ddg[k] && r[k] === NA_STR) { respUpdate[k] = ddg[k]; fuUpdate[k] = DDG_SRC; }
+        }
+        // Sección mercado → p20, p21
+        if (ddg.mercado) {
+          if (r.p20 === NA_STR) { respUpdate.p20 = ddg.mercado; fuUpdate.p20 = DDG_SRC; }
+          if (r.p21 === NA_STR) { respUpdate.p21 = ddg.mercado; fuUpdate.p21 = DDG_SRC; }
+        }
+        // Sección empleados → p22
+        if (ddg.empleados && r.p22 === NA_STR) { respUpdate.p22 = ddg.empleados; fuUpdate.p22 = DDG_SRC; }
+        // Sección gobierno → p10, p12, p13, p14, p15
+        if (ddg.gobierno) {
+          for (const k of ["p10", "p12", "p13", "p14", "p15"]) {
+            if (r[k] === NA_STR) { respUpdate[k] = ddg.gobierno; fuUpdate[k] = DDG_SRC; }
           }
-          return updated;
-        });
+        }
+        // Sección accionistas → p11
+        if (ddg.accionistas && r.p11 === NA_STR) { respUpdate.p11 = ddg.accionistas; fuUpdate.p11 = DDG_SRC; }
+
+        if (Object.keys(respUpdate).length > 0) {
+          setRespuestas(prev => prev ? { ...prev, ...respUpdate } : prev);
+          setFuentes(prev => ({ ...prev, ...fuUpdate }));
+        }
       })
       .catch(() => {});
   }
@@ -1170,7 +1248,7 @@ export default function Modulo1() {
                     </button>
                   </div>
                 </div>
-                <SeccionPreguntas respuestas={respuestas} respuestasEsp={resumen?.respuestasEsp} />
+                <SeccionPreguntas respuestas={respuestas} respuestasEsp={resumen?.respuestasEsp} fuentes={fuentes} />
                 <SeccionResumenesBloques resumen={resumen} loading={cargandoResumen} />
                 <TarjetaResumen d={resumen} loading={cargandoResumen} />
               </div>
