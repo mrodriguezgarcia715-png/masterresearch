@@ -62,6 +62,7 @@ type DatosSEC = {
 type Respuestas = Record<string, string>;
 
 type ResumenEjecutivo = {
+  respuestasEsp?: Record<string, string>;
   resumenBloques?: { bloqueA: string; bloqueB: string; bloqueC: string };
   fortalezas?: string[];
   debilidades?: string[];
@@ -234,7 +235,13 @@ const BLOQUES_INFO = {
   C: { titulo: "Mercado y Sociedad",     color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/30" },
 } as const;
 
-function SeccionPreguntas({ respuestas }: { respuestas: Respuestas }) {
+function SeccionPreguntas({
+  respuestas,
+  respuestasEsp,
+}: {
+  respuestas: Respuestas;
+  respuestasEsp?: Record<string, string>;
+}) {
   return (
     <div className="space-y-8">
       {(["A", "B", "C"] as const).map(bloque => {
@@ -250,7 +257,7 @@ function SeccionPreguntas({ respuestas }: { respuestas: Respuestas }) {
             </div>
             <div className="space-y-3">
               {lista.map(p => {
-                const resp = respuestas[p.id] ?? "Información no disponible";
+                const resp = respuestasEsp?.[p.id] ?? respuestas[p.id] ?? "Información no disponible";
                 const sinDato = resp === "Información no disponible";
                 return (
                   <div key={p.id} className="bg-[#1e293b] rounded-xl border border-slate-700 p-5">
@@ -811,17 +818,16 @@ export default function Modulo1() {
     const r = calcularRespuestas(datos, datosYahoo, datosGlassdoor, datosSEC);
     setRespuestas(r);
 
-    // Llamar a Groq automáticamente con las respuestas recién generadas
+    const tick    = ticker.trim().toUpperCase();
+    const empresa = datos.nombre;
+
+    // Groq: traducciones + resumen ejecutivo
     setCargandoResumen(true);
     setResumen(null);
     fetch("/api/groq", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ticker:     ticker.trim().toUpperCase(),
-        empresa:    datos.nombre,
-        respuestas: r,
-      }),
+      body: JSON.stringify({ ticker: tick, empresa, respuestas: r }),
     })
       .then(res => res.json())
       .then(d => { setResumen(d as ResumenEjecutivo); setCargandoResumen(false); })
@@ -829,6 +835,23 @@ export default function Modulo1() {
         setResumen({ error: "No se pudo conectar con Groq. Verifica que GROQ_API_KEY esté configurada en .env.local." });
         setCargandoResumen(false);
       });
+
+    // DuckDuckGo: fallback para secciones vacías (en paralelo con Groq)
+    fetch(`/api/ddg?ticker=${tick}&empresa=${encodeURIComponent(empresa)}`)
+      .then(res => res.json())
+      .then((ddg: Record<string, string>) => {
+        setRespuestas(prev => {
+          if (!prev) return prev;
+          const updated = { ...prev };
+          for (const [key, texto] of Object.entries(ddg)) {
+            if (updated[key] === "Información no disponible" && texto) {
+              updated[key] = texto;
+            }
+          }
+          return updated;
+        });
+      })
+      .catch(() => {});
   }
 
   const haStarted = cargando || cargandoYahoo || cargandoSEC || datos !== null || datosYahoo !== null || datosSEC !== null;
@@ -1091,7 +1114,7 @@ export default function Modulo1() {
                     </button>
                   </div>
                 </div>
-                <SeccionPreguntas respuestas={respuestas} />
+                <SeccionPreguntas respuestas={respuestas} respuestasEsp={resumen?.respuestasEsp} />
                 <SeccionResumenesBloques resumen={resumen} loading={cargandoResumen} />
                 <TarjetaResumen d={resumen} loading={cargandoResumen} />
               </div>

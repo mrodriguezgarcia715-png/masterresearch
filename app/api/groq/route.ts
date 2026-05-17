@@ -102,10 +102,12 @@ INSTRUCCIONES:
 - Sé directo, concreto y útil para un inversor.
 - Todo en español.
 - Los resúmenes por bloque deben ser párrafos fluidos de 2-3 oraciones que sinteticen los hallazgos clave de ese bloque.
+- Para "respuestasEsp": traduce y resume cada sección en máximo 3 oraciones claras en español. Si el dato original dice exactamente "Información no disponible", escribe exactamente "Información no disponible".
 - ${notaPenalizacion}
 
 Responde ÚNICAMENTE con un JSON válido con exactamente este formato (sin markdown, sin texto adicional):
 {
+  "respuestasEsp": { "p1": "...", "p2": "...", "p3": "...", "p4": "...", "p5": "...", "p6": "...", "p7": "...", "p8": "...", "p9": "...", "p10": "...", "p11": "...", "p12": "...", "p13": "...", "p14": "...", "p15": "...", "p16": "...", "p17": "...", "p18": "...", "p19": "...", "p20": "...", "p21": "...", "p22": "..." },
   "resumenBloques": {
     "bloqueA": "párrafo resumen del Bloque A — El Negocio en 2-3 oraciones",
     "bloqueB": "párrafo resumen del Bloque B — Gobierno Corporativo en 2-3 oraciones",
@@ -152,7 +154,7 @@ export async function POST(req: NextRequest) {
       model:       GROQ_MODEL,
       messages:    [{ role: "user", content: buildPrompt(ticker, empresa ?? ticker, respuestas) }],
       temperature: 0.3,
-      max_tokens:  1800,
+      max_tokens:  4000,
     });
 
     const { status, text } = await httpsPost(

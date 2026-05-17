@@ -158,6 +158,33 @@ async function buscarViaIndeed(
   return null;
 }
 
+// ── Estrategia 3: DuckDuckGo (fallback final) ────────────────────────────────
+
+async function buscarViaDDG(termino: string): Promise<EmpleadorData | null> {
+  try {
+    const q = `${termino} employee rating Glassdoor reviews`;
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "MasterResearch/1.0" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json() as { AbstractText?: string; Answer?: string };
+    const texto = data.Answer?.trim() || data.AbstractText?.trim() || "";
+    if (!texto) return null;
+
+    // Intentar extraer rating numérico del texto (ej: "4.1 out of 5")
+    const ratingMatch = texto.match(/(\d+\.?\d*)\s*(?:out of 5|\/\s*5|\s*stars?)/i);
+    if (!ratingMatch) return null;
+
+    return { overallRating: ratingMatch[1], name: termino };
+  } catch {
+    return null;
+  }
+}
+
 // ── Handler principal ─────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
@@ -190,10 +217,16 @@ export async function GET(req: NextRequest) {
   let datos: EmpleadorData | null = await buscarViaGlassdoor(termino);
   let fuente = "Glassdoor";
 
-  // Estrategia 2: Indeed (si Glassdoor bloqueó o no devolvió datos)
+  // Estrategia 2: Indeed
   if (!datos) {
     datos = await buscarViaIndeed(termino, ticker ?? termino);
     fuente = "Indeed";
+  }
+
+  // Estrategia 3: DuckDuckGo (fallback final)
+  if (!datos) {
+    datos = await buscarViaDDG(termino);
+    fuente = "DuckDuckGo";
   }
 
   if (!datos) {
