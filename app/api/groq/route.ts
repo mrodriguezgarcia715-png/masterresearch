@@ -4,7 +4,7 @@ import https from "node:https";
 
 const GROQ_HOST  = "api.groq.com";
 const GROQ_PATH  = "/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "llama3-8b-8192";
 
 // ── Helper: https.request evita el problema UNABLE_TO_VERIFY_LEAF_SIGNATURE
 //    que afecta al fetch nativo (undici) en Node.js 18+ sobre Windows. ─────────
@@ -83,27 +83,30 @@ function buildPrompt(ticker: string, empresa: string, respuestas: Record<string,
     : `Cobertura de datos: ${100 - pctSinDato}% (${todasLasKeys.length - sinDato}/${todasLasKeys.length} secciones disponibles). No aplica penalización por datos faltantes.`;
 
   function fmtBloque(keys: string[]): string {
-    return keys.map(k => `[${NOMBRES[k]}]\n${respuestas[k] ?? "Informacion no disponible"}`).join("\n\n");
+    return keys.map(k => {
+      const val = respuestas[k] ?? "Informacion no disponible";
+      const txt = val.length > 250 ? val.slice(0, 250) + "…" : val;
+      return `[${NOMBRES[k]}]\n${txt}`;
+    }).join("\n\n");
   }
 
-  return `Eres un analista financiero senior experto en inversiones de valor. Analiza la siguiente información de ${empresa} (${ticker}) extraída de fuentes oficiales (SEC EDGAR, Yahoo Finance, Glassdoor) y genera un resumen ejecutivo estructurado en español.
+  return `Analista financiero. Empresa: ${empresa} (${ticker}). Resume en español usando SOLO los datos siguientes. No inventes datos.
 
-BLOQUE A — EL NEGOCIO (preguntas 1-9):
+BLOQUE A:
 ${fmtBloque(BLOQUES_KEYS.A)}
 
-BLOQUE B — GOBIERNO CORPORATIVO (preguntas 10-18):
+BLOQUE B:
 ${fmtBloque(BLOQUES_KEYS.B)}
 
-BLOQUE C — MERCADO Y SOCIEDAD (preguntas 19-22):
+BLOQUE C:
 ${fmtBloque(BLOQUES_KEYS.C)}
 
-INSTRUCCIONES:
-- Usa SOLO la información proporcionada arriba. No inventes datos.
-- Si la información es insuficiente para un punto, indícalo brevemente.
-- Sé directo, concreto y útil para un inversor.
-- Todo en español.
-- Los resúmenes por bloque deben ser párrafos fluidos de 2-3 oraciones que sinteticen los hallazgos clave de ese bloque.
-- Para "respuestasEsp": traduce y resume cada sección en máximo 3 oraciones claras en español. Si el dato original dice exactamente "Informacion no disponible", escribe exactamente "Informacion no disponible".
+REGLAS:
+- respuestasEsp: 1-2 oraciones por sección en español. Si el dato es "Informacion no disponible", escribe exactamente eso.
+- resumenBloques: 1-2 oraciones por bloque resumiendo hallazgos clave.
+- fortalezas: 3-4 puntos concisos.
+- debilidades: 2-3 puntos concisos.
+- gobierno, conclusion: 1-2 oraciones.
 - ${notaPenalizacion}
 
 Responde ÚNICAMENTE con un JSON válido con exactamente este formato (sin markdown, sin texto adicional):
@@ -155,7 +158,7 @@ export async function POST(req: NextRequest) {
       model:       GROQ_MODEL,
       messages:    [{ role: "user", content: buildPrompt(ticker, empresa ?? ticker, respuestas) }],
       temperature: 0.3,
-      max_tokens:  4000,
+      max_tokens:  1500,
     });
 
     const { status, text } = await httpsPost(

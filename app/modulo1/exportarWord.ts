@@ -177,7 +177,7 @@ export async function exportarWord(params: {
   ticker: string;
   empresa: string;
   respuestas: Respuestas;
-  resumen: ResumenEjecutivo;
+  resumen: ResumenEjecutivo | null;
 }): Promise<void> {
   const { ticker, empresa, respuestas, resumen } = params;
 
@@ -222,7 +222,7 @@ export async function exportarWord(params: {
   }
 
   // ── Resúmenes por Bloque ─────────────────────────────────────────────────────
-  if (resumen.resumenBloques) {
+  if (resumen?.resumenBloques) {
     children.push(separador());
     children.push(new Paragraph({ children: [new TextRun({ text: "" })], spacing: { before: 40, after: 0 } }));
 
@@ -243,7 +243,7 @@ export async function exportarWord(params: {
     ];
 
     for (const b of bloquesDef) {
-      const texto = resumen.resumenBloques[b.key] ?? "";
+      const texto = resumen?.resumenBloques?.[b.key] ?? "";
       children.push(parrafoSeccionColor(b.titulo, b.color));
       children.push(parrafoTexto(texto || "Información no disponible"));
     }
@@ -265,13 +265,13 @@ export async function exportarWord(params: {
   }));
 
   // Puntuación
-  if (resumen.puntuacion !== undefined) {
+  if (resumen?.puntuacion !== undefined) {
     children.push(parrafoSeccion("Puntuación"));
     children.push(parrafoPuntuacion(resumen.puntuacion));
   }
 
   // Fortalezas
-  if (resumen.fortalezas?.length) {
+  if (resumen?.fortalezas?.length) {
     children.push(parrafoSeccion("Fortalezas"));
     for (const f of resumen.fortalezas) {
       children.push(parrafoBullet(f, true));
@@ -279,7 +279,7 @@ export async function exportarWord(params: {
   }
 
   // Debilidades
-  if (resumen.debilidades?.length) {
+  if (resumen?.debilidades?.length) {
     children.push(parrafoSeccion("Debilidades"));
     for (const d of resumen.debilidades) {
       children.push(parrafoBullet(d, false));
@@ -287,13 +287,13 @@ export async function exportarWord(params: {
   }
 
   // Gobierno corporativo
-  if (resumen.gobierno) {
+  if (resumen?.gobierno) {
     children.push(parrafoSeccion("Gobierno Corporativo"));
     children.push(parrafoTexto(resumen.gobierno));
   }
 
   // Conclusión
-  if (resumen.conclusion) {
+  if (resumen?.conclusion) {
     children.push(parrafoSeccion("Conclusión"));
     children.push(parrafoTexto(resumen.conclusion));
   }

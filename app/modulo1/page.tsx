@@ -237,14 +237,14 @@ function calcularRespuestas(
 
   const respuestas: Respuestas = {
     // BLOQUE A
-    p1:  head(t1_es ?? t1, 2000) || na,
+    p1:  head(t1_es ?? t1, 600) || na,
     p2:  snip(t1, ["customer", "client", "consumer", "buyer", "user", "subscriber"]) || na,
     p3:  snip(t1, ["competitive advantage", "brand", "network effect", "switching cost", "proprietary", "patent", "intellectual property", "moat"]) || na,
     p4:  snip(t1, ["competition", "competitor", "market share", "industry", "rival", "disrupt"]) || na,
     p5:  snip(t1, ["brand", "pric", "premium", "differentiat", "commodity", "pricing power"]) || na,
     p6:  snip(t1 + " " + t7, ["innovat", "technolog", "digital", "transform", "adapt", "reinvent", "research and development"]) || na,
-    p7:  head(t1a_es ?? t1a, 2000) || na,
-    p8:  head(t7_es ?? t7, 1000) || snip(t1 + " " + t7, ["long-term", "long term", "sustainable", "future", "scale", "growth driver"]) || na,
+    p7:  head(t1a_es ?? t1a, 600) || na,
+    p8:  head(t7_es ?? t7, 600) || snip(t1 + " " + t7, ["long-term", "long term", "sustainable", "future", "scale", "growth driver"]) || na,
     p9:  p9snip || na,
     // BLOQUE B
     p10: p10val || na,
@@ -1205,40 +1205,39 @@ export default function Modulo1() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    {resumen && !resumen.error && (
-                      <div className="flex flex-col items-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const tick = ticker.trim().toUpperCase();
-                            const empresa = datos?.nombre ?? tick;
-                            exportarWord({ ticker: tick, empresa, respuestas, resumen });
-                            const fechaHora = new Date().toLocaleString("es-ES", {
-                              day: "2-digit",
-                              month: "long",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            });
-                            const data = { ticker: tick, empresa, fechaHora };
-                            localStorage.setItem("mr_ultima_descarga_m1", JSON.stringify(data));
-                            setUltimaDescarga(data);
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f59e0b]/10
-                                     border border-[#f59e0b]/30 text-[#f59e0b] text-xs font-semibold
-                                     hover:bg-[#f59e0b]/20 hover:border-[#f59e0b]/60 transition-all"
-                        >
-                          <span>📄</span>
-                          Exportar a Word
-                        </button>
-                        {ultimaDescarga && (
-                          <p className="text-slate-500 text-[10px]">
-                            Último reporte descargado: {ultimaDescarga.fechaHora}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!respuestas) return;
+                          const tick = ticker.trim().toUpperCase();
+                          const empresa = datos?.nombre ?? tick;
+                          exportarWord({ ticker: tick, empresa, respuestas, resumen: resumen && !resumen.error ? resumen : null });
+                          const fechaHora = new Date().toLocaleString("es-ES", {
+                            day: "2-digit",
+                            month: "long",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          });
+                          const data = { ticker: tick, empresa, fechaHora };
+                          localStorage.setItem("mr_ultima_descarga_m1", JSON.stringify(data));
+                          setUltimaDescarga(data);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#f59e0b]/10
+                                   border border-[#f59e0b]/30 text-[#f59e0b] text-xs font-semibold
+                                   hover:bg-[#f59e0b]/20 hover:border-[#f59e0b]/60 transition-all"
+                      >
+                        <span>📄</span>
+                        Exportar a Word
+                      </button>
+                      {ultimaDescarga && (
+                        <p className="text-slate-500 text-[10px]">
+                          Último reporte descargado: {ultimaDescarga.fechaHora}
+                        </p>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={() => setRespuestas(null)}
