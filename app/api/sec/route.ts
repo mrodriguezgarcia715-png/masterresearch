@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonResponse } from "../_lib/json";
 
 const UA = "MasterResearch mrodriguezgarcia715@gmail.com";
 const NA = "Información no disponible";
@@ -395,15 +396,15 @@ async function get13FHolders(
 export async function GET(req: NextRequest) {
   const ticker = req.nextUrl.searchParams.get("ticker")?.toUpperCase();
   if (!ticker) {
-    return NextResponse.json({ error: "Ticker requerido" }, { status: 400 });
+    return jsonResponse({ error: "Ticker requerido" }, 400);
   }
 
   // 1. Resolver CIK
   const entrada = await getCik(ticker);
   if (!entrada) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: `Ticker "${ticker}" no encontrado en SEC EDGAR.` },
-      { status: 404 }
+      404
     );
   }
   const { cik, title: empresa } = entrada;
@@ -433,7 +434,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({
+  return jsonResponse({
     ticker,
     empresa,
     cik: cikNum,

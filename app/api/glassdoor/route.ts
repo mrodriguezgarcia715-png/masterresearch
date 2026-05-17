@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonResponse } from "../_lib/json";
 
 const NA = "Información no disponible";
 
@@ -192,9 +193,9 @@ export async function GET(req: NextRequest) {
   const empresa = req.nextUrl.searchParams.get("empresa") ?? null;
 
   if (!ticker && !empresa) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "Se requiere al menos 'ticker' o 'empresa'" },
-      { status: 400 }
+      400
     );
   }
 
@@ -230,10 +231,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (!datos) {
-    return NextResponse.json(vacio);
+    return jsonResponse(vacio);
   }
 
-  return NextResponse.json({
+  return jsonResponse({
     ticker,
     empresa:          datos.name ?? empresa ?? ticker,
     ratingGeneral:    safeNum(datos.overallRating),

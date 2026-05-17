@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonResponse } from "../_lib/json";
 
 // DuckDuckGo Instant Answer API — gratuita, sin clave
 const DDG = "https://api.duckduckgo.com/";
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
   const empresa = req.nextUrl.searchParams.get("empresa") ?? ticker;
 
   if (!ticker) {
-    return NextResponse.json({}, { status: 400 });
+    return jsonResponse({}, 400);
   }
 
   // Consultas específicas por sección
@@ -59,5 +60,5 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  return NextResponse.json(resultados);
+  return jsonResponse(resultados);
 }

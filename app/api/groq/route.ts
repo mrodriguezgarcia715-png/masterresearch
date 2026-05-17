@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { jsonResponse } from "../_lib/json";
 import https from "node:https";
 
 const GROQ_HOST  = "api.groq.com";
@@ -133,9 +134,9 @@ Para la puntuación (1-100):
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "GROQ_API_KEY no configurada en .env.local" },
-      { status: 500 }
+      500
     );
   }
 
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (!ticker || !respuestas) {
-      return NextResponse.json({ error: "ticker y respuestas son requeridos" }, { status: 400 });
+      return jsonResponse({ error: "ticker y respuestas son requeridos" }, 400);
     }
 
     const body = JSON.stringify({
@@ -166,9 +167,9 @@ export async function POST(req: NextRequest) {
     );
 
     if (status < 200 || status >= 300) {
-      return NextResponse.json(
+      return jsonResponse(
         { error: `Groq API error ${status}: ${text.slice(0, 200)}` },
-        { status: 502 }
+        502
       );
     }
 
@@ -179,14 +180,14 @@ export async function POST(req: NextRequest) {
     const raw   = data.choices?.[0]?.message?.content ?? "{}";
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) {
-      return NextResponse.json({ error: "Groq devolvió una respuesta no parseable", raw: raw.slice(0, 200) }, { status: 502 });
+      return jsonResponse({ error: "Groq devolvió una respuesta no parseable", raw: raw.slice(0, 200) }, 502);
     }
 
     const resultado = JSON.parse(match[0]);
-    return NextResponse.json(resultado);
+    return jsonResponse(resultado);
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Error interno del servidor";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return jsonResponse({ error: msg }, 500);
   }
 }
