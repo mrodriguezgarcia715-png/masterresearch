@@ -88,7 +88,7 @@ async function buscarViaIndeed(
   termino: string,
   ticker: string
 ): Promise<EmpleadorData | null> {
-  const slugs = [...new Set([ticker.toLowerCase(), toSlug(termino)])].filter(Boolean);
+  const slugs = Array.from(new Set([ticker.toLowerCase(), toSlug(termino)])).filter(Boolean);
 
   const INDEED_HEADERS = {
     "User-Agent":
